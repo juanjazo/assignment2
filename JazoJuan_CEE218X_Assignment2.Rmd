@@ -1,0 +1,503 @@
+---
+title: "Jazo,Juan_A2"
+author: "Juan Jazo"
+date: "11/26/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+```{r}
+library(tidyverse)
+library(censusapi)
+
+Sys.setenv(CENSUS_KEY="e4f842158d4988f27c1b0d5da11cffe08993eb2d")
+
+acs_vars_2018_5yr <-
+  listCensusMetadata(
+    name = "2018/acs/acs5",
+    type = "variables"
+  )
+
+acs_vars_2019_1yr <-
+  listCensusMetadata(
+    name = "2019/acs/acs1",
+    type = "variables"
+  )
+
+census_race_labels <- 
+  c(
+    "White Alone",
+    "Black or African American",
+    "American Indian and Alaska Native Alone",
+    "Asian Alone",
+    "Native Hawaiian and Other Pacific Islander Alone)",
+    "Some Other Race Alone",
+    "Two or More Races"
+  )
+
+##############################################################################################################
+##############################################################################################################
+
+SF_educ_attain_race <-
+  1:7 %>% 
+  map_dfr(function(x){
+    getCensus(
+      name = "acs/acs5",
+      vintage = 2018,
+      region = "county:075",
+      regionin = "state:06",
+      vars = paste0("group(C15002",LETTERS[x],")")
+    ) %>%
+      select(!c(GEO_ID,state,NAME) & !ends_with(c("EA","MA","M"))) %>%
+      pivot_longer(
+        ends_with("E"),
+        names_to = "variable",
+        values_to = "estimate"
+      ) %>%
+      left_join(
+        acs_vars_2018_5yr %>% 
+          select(name, label), 
+        by = c("variable" = "name")
+      ) %>% 
+      select(-variable) %>% 
+      separate(
+        label,
+        into = c(NA,NA,NA,"attainment"),
+        sep = "!!"
+      ) %>% 
+      filter(!is.na(attainment)) %>% 
+      mutate(race = census_race_labels[x])
+  })
+
+SF_educ_attain_race_19 <-
+  1:7 %>% 
+  map_dfr(function(x){
+    getCensus(
+      name = "acs/acs1",
+      vintage = 2019,
+      region = "county:075",
+      regionin = "state:06",
+      vars = paste0("group(C15002",LETTERS[x],")")
+    ) %>%
+      select(!c(GEO_ID,state,NAME) & !ends_with(c("EA","MA","M"))) %>%
+      pivot_longer(
+        ends_with("E"),
+        names_to = "variable",
+        values_to = "estimate"
+      ) %>%
+      left_join(
+        acs_vars_2019_1yr %>% 
+          select(name, label), 
+        by = c("variable" = "name")
+      ) %>% 
+      select(-variable) %>% 
+      separate(
+        label,
+        into = c(NA,NA,NA,"attainment"),
+        sep = "!!"
+      ) %>% 
+      filter(!is.na(attainment)) %>% 
+      mutate(race = census_race_labels[x])
+  })
+
+
+#saveRDS(SF_educ_attain_race_19, file ="SF_educ_attain_race_19.rds" )
+
+
+SF_educ_attain_race %>% 
+  group_by(attainment, race) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = attainment %>% factor(),
+      y = estimate,
+      fill = race
+    ),
+    stat = "identity",
+    position = "stack"
+  ) +
+  labs(
+    x = "Education Attainment",
+    y = "Number of People",
+    title = "San Francisco Educational Attainment by race",
+    fill = "Race of Individual"
+  ) +
+  coord_flip()
+
+
+SF_educ_total <-
+  SF_educ_attain_race %>% 
+  group_by(race) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  mutate(attainment = "Total")
+
+
+SF_educ_attain_race %>% 
+  group_by(attainment, race) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  rbind(SF_educ_total) %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = attainment %>% factor(levels = rev(c("Total",SF_educ_attain_race$attainment[1:4]))),
+      y = estimate,
+      fill = race
+    ),
+    stat = "identity",
+    position = "fill"
+  ) +
+  labs(
+    x = "Educational Attainment",
+    y = "Proportion of households",
+    title = "Bay Area household Education Attainment by race",
+    fill = "Race of householder"
+  ) +
+  coord_flip() +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "vertical"
+  )
+
+```
+
+
+```{r internet1, warning = F, message = F, echo = T}
+
+library(devtools)
+devtools::install_github("walkerke/tidycensus")
+library(tidycensus)
+library(sf)
+library(tigris)
+library(leaflet)
+library(dplyr)
+
+#pums_hca_2019_1yr <- read.csv("/Users/juanjazo/Documents/GitHub/Assignment 2 /csv_hca/psam_h06.csv")
+
+census_api_key("e4f842158d4988f27c1b0d5da11cffe08993eb2d")
+
+ca_pums <- get_pums(
+  variables = c(
+    "PUMA",
+    "ACCESS",
+    "SCHG"
+  ),
+  state = "CA",
+  year = 2019,
+  survey = "acs1",
+  recode = T
+)
+ca_pums$PUMA<-as.numeric(ca_pums$PUMA)
+
+#saveRDS(ca_pums, file = "2019_acs1_pums")
+# Restore the object
+#ca_pums <-readRDS(file = "2019_acs1_pums")
+
+ca_counties <- counties("CA", cb = T, progress_bar = F)
+projection <- "+proj=utm +zone=10 +ellps=GRS80 +datum=NAD83 +units=ft +no_defs"
+
+ca_counties_transformed <- 
+  ca_counties %>% 
+  st_transform(4326) %>% 
+  st_transform(26910) %>% 
+  st_transform(projection) %>% 
+  st_transform(st_crs(ca_counties))
+
+bay_county_names <-
+  c(
+    "Alameda",
+    "Contra Costa",
+    "Marin",
+    "Napa",
+    "San Francisco",
+    "San Mateo",
+    "Santa Clara",
+    "Solano",
+    "Sonoma"
+  )
+
+bay_counties <-
+  counties("CA", cb = T, progress_bar = F) %>%
+  filter(NAME %in% bay_county_names)
+
+ca_pumas <- pumas("CA", cb =T)
+
+bay_pumas <-
+  ca_pumas %>% 
+  st_centroid() %>% 
+  .[bay_counties, ] %>% 
+  st_set_geometry(NULL) %>% 
+  left_join(ca_pumas %>% select(GEOID10)) %>% 
+  st_as_sf()
+
+bay_pumas$PUMACE10<-as.numeric(bay_pumas$PUMACE10)
+
+bay_pums <-
+  ca_pums %>%
+  filter(PUMA %in% bay_pumas$PUMACE10)
+bay_pums$PUMA<-as.numeric(bay_pums$PUMA)
+bay_pums$ACCESS<-as.numeric(bay_pums$ACCESS)
+bay_pums$SCHG<-as.numeric(bay_pums$SCHG)
+bay_pums$PWGTP<-as.numeric(bay_pums$PWGTP)
+
+saveRDS(bay_pums, file = "2019_bay_area_pums")
+## Restore the object
+#ca_pums <-readRDS(file = "2019_bay_area_pums")
+
+# number of children in K-12 for the Bay Area 
+
+# kids_bay_no_int <- bay_pums %>% filter(ACCESS ==3 ) %>% filter(!is.na(SCHG)) %>% filter(SCHG >= 2 & SCHG <= 14)
+# total_no_access = sum(bay_no_int$PWGTP)
+# num_no_access <- sum(kids_bay_no_int$PWGTP)
+# 
+# 
+# total_kids <- bay_pums %>% filter(SCHG >= 2 & SCHG <=14)
+# num_kids <- sum(total_kids$PWGTP)
+# 
+# number_kids <- sum(total_kids$PWGTP)
+
+# total_no_access <-total_kids %>% filter(ACCESS == 3) 
+# 
+# total_no_access_kids <- sum(total_no_access$PWGTP)
+# 
+# 
+# total_no_access_kids/number_kids
+library(dplyr)
+
+bay_pums_example <-
+  bay_pums %>% 
+  filter(!is.na(SCHG)) %>% 
+  mutate(
+    no_access_student = ifelse((ACCESS == 3) & (SCHG >= 2 & SCHG <=14),
+      PWGTP,
+      0
+    )
+  ) %>% 
+  group_by(PUMA) %>% 
+  summarize(
+    perc_no_access_student =
+      sum(no_access_student, na.rm =T)/sum(PWGTP, na.rm = T)*100
+  ) %>% 
+  left_join(
+    bay_pumas %>% 
+      select(PUMACE10),
+    by = c("PUMA" = "PUMACE10")
+  ) %>% 
+  st_as_sf()
+
+pums_pal <- colorNumeric(
+  palette = "Oranges",
+  domain = bay_pums_example$perc_no_access_student
+)
+
+leaflet() %>%
+  addTiles() %>% 
+  addPolygons(
+    data = bay_pums_example,
+    fillColor = ~pums_pal(perc_no_access_student),
+    color = "white",
+    opacity = 0.5,
+    fillOpacity = 0.5,
+    weight = 1,
+    label = ~paste0(
+      round(perc_no_access_student), 
+      "% K-12 Students with No Internet Access at Home"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )
+  ) %>% 
+  addLegend(
+    data = bay_pums_example,
+    pal = pums_pal,
+    values = ~perc_no_access_student,
+    title = "% Bay Area K-12<br>Students with No<br>Internet Access<br>At Home"
+  )
+
+```
+
+
+
+```{r}
+library(tidyverse)
+library(censusapi)
+library(knitr)
+
+Sys.setenv(CENSUS_KEY="e4f842158d4988f27c1b0d5da11cffe08993eb2d")
+
+acs_vars_2019_1yr <-
+  listCensusMetadata(
+    name = "2019/acs/acs1",
+    type = "variables"
+  )
+
+sfc_mobility_current_19 <- 
+  getCensus(
+    name = "acs/acs1",
+    vintage = 2019,
+    region = "county:075",
+    regionin = "state:06",
+    vars = c("group(B07009)")
+  ) %>% 
+  select(!c(GEO_ID,state,NAME) & !ends_with(c("EA","MA","M"))) %>%
+  pivot_longer(
+    ends_with("E"),
+    names_to = "variable",
+    values_to = "estimate"
+  ) %>%
+  left_join(
+    acs_vars_2019_1yr %>% 
+      select(name, label), 
+    by = c("variable" = "name")
+  ) %>% 
+  select(-variable) 
+
+
+sfc_mobility_current_19_grouped <- sfc_mobility_current_19 %>% 
+  separate(
+    label,
+    into = c(NA,NA,"mobility","education"),
+    sep = "!!"
+  ) %>% 
+  mutate(educ_attain = ifelse(
+    education == "NA",
+    0, 
+    education),
+          
+    mobility = ifelse(
+    mobility %in% c("Same house 1 year ago:", "Moved within same county:"),
+    "Here since last year",
+    "Inflow"
+    )
+  ) %>% 
+ filter(!is.na(educ_attain)) %>% 
+  group_by(mobility, educ_attain) %>% 
+  summarize(estimate = sum(estimate))
+
+
+sfc_mobility_lastyear_19 <- 
+  getCensus(
+    name = "acs/acs1",
+    vintage = 2019,
+    region = "county:075",
+    regionin = "state:06",
+    vars = c("group(B07409)")
+  ) %>% 
+  select(!c(GEO_ID,state,NAME) & !ends_with(c("EA","MA","M"))) %>%
+  pivot_longer(
+    ends_with("E"),
+    names_to = "variable",
+    values_to = "estimate"
+  ) %>%
+  left_join(
+    acs_vars_2019_1yr %>% 
+      select(name, label), 
+    by = c("variable" = "name")
+  ) %>% 
+  select(-variable) 
+
+sfc_mobility_lastyear_19_grouped <- sfc_mobility_lastyear_19 %>% 
+  separate(
+    label,
+    into = c(NA,NA,"mobility","education"),
+    sep = "!!"
+  ) %>% 
+  mutate(educ_attain = ifelse(
+    education == "NA",
+    0, 
+    education),
+          
+    mobility = ifelse(
+    mobility %in% c("Same house:", "Moved within same county:"),
+    "Here since last year",
+    "Outflow"
+    )
+  ) %>% 
+ filter(!is.na(educ_attain)) %>% 
+  group_by(mobility, educ_attain) %>% 
+  summarize(estimate = sum(estimate))
+
+
+sfc_mobility_current_18 <- 
+  getCensus(
+    name = "acs/acs1",
+    vintage = 2018,
+    region = "county:075",
+    regionin = "state:06",
+    vars = c("group(B07409)")
+  ) %>% 
+  select(!c(GEO_ID,state,NAME) & !ends_with(c("EA","MA","M"))) %>%
+  pivot_longer(
+    ends_with("E"),
+    names_to = "variable",
+    values_to = "estimate"
+  ) %>%
+  left_join(
+    acs_vars_2019_1yr %>% 
+      select(name, label), 
+    by = c("variable" = "name")
+  ) %>% 
+  select(-variable) %>% 
+  separate(
+    label,
+   into = c(NA,NA,"mobility","education"),
+    sep = "!!"
+  ) %>% 
+  mutate(educ_attain = ifelse(
+    education == "NA",
+    0, 
+    education),
+    mobility = "Here last year"
+    ) %>% 
+ filter(!is.na(educ_attain)) %>% 
+  group_by(mobility, educ_attain) %>% 
+  summarize(estimate = sum(estimate))
+
+
+
+sfc_flows_19 <-
+  rbind(
+    sfc_mobility_current_18,
+    sfc_mobility_lastyear_19_grouped %>% 
+      filter(mobility == "Outflow"),
+    sfc_mobility_current_19_grouped %>% 
+      filter(mobility == "Inflow"),
+    sfc_mobility_current_19_grouped %>% 
+      group_by(educ_attain) %>% 
+      summarize(estimate = sum(estimate)) %>% 
+      mutate(mobility = "Here this year")
+  ) 
+
+sfc_flows_19_wide <- sfc_flows_19 %>% 
+  pivot_wider(
+    names_from = mobility,
+    values_from = estimate
+  ) 
+
+
+sfc_flows_19_wide_newcols <- sfc_flows_19_wide %>% 
+  mutate(
+    `External net` = Inflow - Outflow,
+    `Internal net` = `Here this year` - `Here last year` - `External net`,
+  ) 
+
+#saveRDS(sfc_flows_19_wide_newcols, file = "sfc_flows_19_wide_newcols.rds")
+
+
+kable(sfc_flows_19_wide_newcols %>% 
+  select(
+    `Education Level` = educ_attain, 
+    `Internal net`,
+    `External net`,
+    `Here last year`, 
+    `Here this year`, 
+    Outflow, 
+    Inflow
+  ))
+
+```
