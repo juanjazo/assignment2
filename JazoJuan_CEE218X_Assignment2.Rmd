@@ -9,25 +9,34 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
-```{r}
+## Assignment 2 
+### Part 1 - Equity Analysis of Education Attainment
+
+In this first part of assignment two we are going to look into how educational attainment in the bay area varies by race. For this analysis we will use ACS data for San Francisco County, and accordingly the sample will only include the population of individuals 25 years or older. 
+
+```{r, message=FALSE,warning=FALSE}
+# load in some of the required packages 
 library(tidyverse)
 library(censusapi)
 
+#load in our census API key 
 Sys.setenv(CENSUS_KEY="e4f842158d4988f27c1b0d5da11cffe08993eb2d")
 
+# here we can take a look at the variables for the 2018 five-year census 
 acs_vars_2018_5yr <-
   listCensusMetadata(
     name = "2018/acs/acs5",
     type = "variables"
   )
 
+# here we can look at the variables from the 2019 one-year census 
 acs_vars_2019_1yr <-
   listCensusMetadata(
     name = "2019/acs/acs1",
     type = "variables"
   )
 
+# create the race labels for this analysis 
 census_race_labels <- 
   c(
     "White Alone",
@@ -39,9 +48,10 @@ census_race_labels <-
     "Two or More Races"
   )
 
-##############################################################################################################
-##############################################################################################################
 
+# this code grabs data from the 2018 census for San Francisco County 
+# the data frame includes information about the estimated number of people that fall into different 
+# education attainment buckets. The data is organized by race
 SF_educ_attain_race <-
   1:7 %>% 
   map_dfr(function(x){
@@ -73,6 +83,63 @@ SF_educ_attain_race <-
       mutate(race = census_race_labels[x])
   })
 
+# this code plots the education attainment by race 
+SF_educ_attain_race %>% 
+  group_by(attainment, race) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = attainment %>% factor(),
+      y = estimate,
+      fill = race
+    ),
+    stat = "identity",
+    position = "stack"
+  ) + theme(
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1)) +
+  labs(
+    x = "Education Attainment",
+    y = "Number of People",
+    title = "San Francisco Educational Attainment by race 2018",
+    fill = "Race of Individual"
+  ) 
+
+# now we want to plot the same information but in terms of relative proportion 
+# this code finds the overall percentage of education attainment by race 
+SF_educ_total <-
+  SF_educ_attain_race %>% 
+  group_by(race) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  mutate(attainment = "Total")
+
+SF_educ_attain_race %>% 
+  group_by(attainment, race) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  rbind(SF_educ_total) %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = attainment %>% factor(levels = rev(c("Total",SF_educ_attain_race$attainment[1:4]))),
+      y = estimate,
+      fill = race
+    ),
+    stat = "identity",
+    position = "fill"
+  ) +
+  labs(
+    x = "Educational Attainment",
+    y = "Proportion of households",
+    title = "Bay Area household Education Attainment by race 2018",
+    fill = "Race of householder"
+  ) +
+  coord_flip() +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "vertical"
+  )
+
+# this code grabs data from the 2019 census for the San Francisco County 
 SF_educ_attain_race_19 <-
   1:7 %>% 
   map_dfr(function(x){
@@ -104,11 +171,11 @@ SF_educ_attain_race_19 <-
       mutate(race = census_race_labels[x])
   })
 
-
+#save the data for easier re-loading 
 #saveRDS(SF_educ_attain_race_19, file ="SF_educ_attain_race_19.rds" )
 
-
-SF_educ_attain_race %>% 
+# now we recreate the plotting using the 2019 data 
+SF_educ_attain_race_19 %>% 
   group_by(attainment, race) %>% 
   summarize(estimate = sum(estimate)) %>% 
   ggplot() +
@@ -120,31 +187,29 @@ SF_educ_attain_race %>%
     ),
     stat = "identity",
     position = "stack"
-  ) +
+  ) + theme(
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1)) +
   labs(
     x = "Education Attainment",
     y = "Number of People",
-    title = "San Francisco Educational Attainment by race",
+    title = "San Francisco Educational Attainment by race 2019",
     fill = "Race of Individual"
-  ) +
-  coord_flip()
+  ) 
 
-
-SF_educ_total <-
-  SF_educ_attain_race %>% 
+SF_educ_total_19 <-
+  SF_educ_attain_race_19 %>% 
   group_by(race) %>% 
   summarize(estimate = sum(estimate)) %>% 
   mutate(attainment = "Total")
 
-
-SF_educ_attain_race %>% 
+SF_educ_attain_race_19 %>% 
   group_by(attainment, race) %>% 
   summarize(estimate = sum(estimate)) %>% 
   rbind(SF_educ_total) %>% 
   ggplot() +
   geom_bar(
     aes(
-      x = attainment %>% factor(levels = rev(c("Total",SF_educ_attain_race$attainment[1:4]))),
+      x = attainment %>% factor(levels = rev(c("Total",SF_educ_attain_race_19$attainment[1:4]))),
       y = estimate,
       fill = race
     ),
@@ -154,7 +219,7 @@ SF_educ_attain_race %>%
   labs(
     x = "Educational Attainment",
     y = "Proportion of households",
-    title = "Bay Area household Education Attainment by race",
+    title = "Bay Area household Education Attainment by race 2019",
     fill = "Race of householder"
   ) +
   coord_flip() +
@@ -164,10 +229,14 @@ SF_educ_attain_race %>%
   )
 
 ```
+In both the 2018 and 2019 plots we see that Asian and White households are most represented. This makes sense, since these two demographics make up roughly 84% of San Francisco County's population. Interestingly, if we look at the "Less than high school level attainment" population, we see that "White Alone" make up 15% of this population, while "Asian Alone" make up over 62%. This clearly shows that there are problems with equitable education attainment in San Francisco County. 
 
+### Part 2 - K-12 Internet Access
+
+In this part we will be using PUMS data to look at the levels of home internet access across the Bay Area's K-12 population. 
 
 ```{r internet1, warning = F, message = F, echo = T}
-
+#load in some useful packages 
 library(devtools)
 devtools::install_github("walkerke/tidycensus")
 library(tidycensus)
@@ -175,28 +244,31 @@ library(sf)
 library(tigris)
 library(leaflet)
 library(dplyr)
+library(censusapi)
 
-#pums_hca_2019_1yr <- read.csv("/Users/juanjazo/Documents/GitHub/Assignment 2 /csv_hca/psam_h06.csv")
 
+#load Census API Key 
 census_api_key("e4f842158d4988f27c1b0d5da11cffe08993eb2d")
 
-ca_pums <- get_pums(
-  variables = c(
-    "PUMA",
-    "ACCESS",
-    "SCHG"
-  ),
-  state = "CA",
-  year = 2019,
-  survey = "acs1",
-  recode = T
-)
-ca_pums$PUMA<-as.numeric(ca_pums$PUMA)
+# #load in the PUMS data for 2019 one-year survey. We are using PUMA,ACCESS, and SCHG variables 
+# ca_pums <- get_pums(
+#   variables = c(
+#     "PUMA",
+#     "ACCESS",
+#     "SCHG"
+#   ),
+#   state = "CA",
+#   year = 2019,
+#   survey = "acs1",
+#   recode = T
+# )
+# ca_pums$PUMA<-as.numeric(ca_pums$PUMA)
 
 #saveRDS(ca_pums, file = "2019_acs1_pums")
 # Restore the object
-#ca_pums <-readRDS(file = "2019_acs1_pums")
+ca_pums <-readRDS(file = "2019_acs1_pums")
 
+#load in CA counties and spatial data 
 ca_counties <- counties("CA", cb = T, progress_bar = F)
 projection <- "+proj=utm +zone=10 +ellps=GRS80 +datum=NAD83 +units=ft +no_defs"
 
@@ -224,8 +296,10 @@ bay_counties <-
   counties("CA", cb = T, progress_bar = F) %>%
   filter(NAME %in% bay_county_names)
 
+#load in CA PUMAS 
 ca_pumas <- pumas("CA", cb =T)
 
+#now we can filter for Bay Area PUMAS
 bay_pumas <-
   ca_pumas %>% 
   st_centroid() %>% 
@@ -233,7 +307,6 @@ bay_pumas <-
   st_set_geometry(NULL) %>% 
   left_join(ca_pumas %>% select(GEOID10)) %>% 
   st_as_sf()
-
 bay_pumas$PUMACE10<-as.numeric(bay_pumas$PUMACE10)
 
 bay_pums <-
@@ -244,30 +317,9 @@ bay_pums$ACCESS<-as.numeric(bay_pums$ACCESS)
 bay_pums$SCHG<-as.numeric(bay_pums$SCHG)
 bay_pums$PWGTP<-as.numeric(bay_pums$PWGTP)
 
-saveRDS(bay_pums, file = "2019_bay_area_pums")
-## Restore the object
-#ca_pums <-readRDS(file = "2019_bay_area_pums")
+#saveRDS(bay_pums, file = "2019_bay_area_pums")
 
-# number of children in K-12 for the Bay Area 
-
-# kids_bay_no_int <- bay_pums %>% filter(ACCESS ==3 ) %>% filter(!is.na(SCHG)) %>% filter(SCHG >= 2 & SCHG <= 14)
-# total_no_access = sum(bay_no_int$PWGTP)
-# num_no_access <- sum(kids_bay_no_int$PWGTP)
-# 
-# 
-# total_kids <- bay_pums %>% filter(SCHG >= 2 & SCHG <=14)
-# num_kids <- sum(total_kids$PWGTP)
-# 
-# number_kids <- sum(total_kids$PWGTP)
-
-# total_no_access <-total_kids %>% filter(ACCESS == 3) 
-# 
-# total_no_access_kids <- sum(total_no_access$PWGTP)
-# 
-# 
-# total_no_access_kids/number_kids
-library(dplyr)
-
+# now we have all of our data in and we can begin to filter for students that do not have internet access 
 bay_pums_example <-
   bay_pums %>% 
   filter(!is.na(SCHG)) %>% 
@@ -289,11 +341,13 @@ bay_pums_example <-
   ) %>% 
   st_as_sf()
 
+# create the color palate for plotting 
 pums_pal <- colorNumeric(
   palette = "Oranges",
   domain = bay_pums_example$perc_no_access_student
 )
 
+# create our plot which shows percent of Bay Area K-12 students with no home internet access. 
 leaflet() %>%
   addTiles() %>% 
   addPolygons(
@@ -321,21 +375,32 @@ leaflet() %>%
 
 ```
 
+According to 2019 PUMS data we see that there is a serious proportion of K-12 students lacking internet access at home. In some areas this fraction is as high as 14%. PUMS data is useful because it shows a the full range of census responses collected on individual ACS questionnaires for a representative sub-sample of census respondents. With the data illustrated in this way, we can more easily see areas which are especially under-resourced for post-covid schooling and work from home. Using this information, I hope special provisions are taken to ensure that the populations lacking internet access receive the proper resources to continue their schooling on the online format we all have to adjust to. 
 
 
-```{r}
+## Part 3 - Education Mobility Migration Analysis 
+
+In this part we will look at the inflow and outflow of people in San Francisco with respect to their education level. The goal of this analysis is to see how educated the people flowing in/out of SF county are. 
+
+```{r,message=FALSE,warning=FALSE}
+#load up useful packages 
 library(tidyverse)
 library(censusapi)
 library(knitr)
-
+#load census Key 
 Sys.setenv(CENSUS_KEY="e4f842158d4988f27c1b0d5da11cffe08993eb2d")
 
-acs_vars_2019_1yr <-
-  listCensusMetadata(
-    name = "2019/acs/acs1",
-    type = "variables"
-  )
+#grab the ACS 2019 variables 
+# acs_vars_2019_1yr <-
+#   listCensusMetadata(
+#     name = "2019/acs/acs1",
+#     type = "variables"
+#   )
+# 
+# saveRDS(acs_vars_2019_1yr, file = "acs_vars_2019_1yr")
+acs_vars_2019_1yr <- readRDS(file = "acs_vars_2019_1yr")
 
+#grab the 2019 data 
 sfc_mobility_current_19 <- 
   getCensus(
     name = "acs/acs1",
@@ -357,7 +422,7 @@ sfc_mobility_current_19 <-
   ) %>% 
   select(-variable) 
 
-
+# group the mobility data 
 sfc_mobility_current_19_grouped <- sfc_mobility_current_19 %>% 
   separate(
     label,
@@ -379,7 +444,7 @@ sfc_mobility_current_19_grouped <- sfc_mobility_current_19 %>%
   group_by(mobility, educ_attain) %>% 
   summarize(estimate = sum(estimate))
 
-
+# grab the mobility data from people who were in SF county a year ago 
 sfc_mobility_lastyear_19 <- 
   getCensus(
     name = "acs/acs1",
@@ -411,7 +476,6 @@ sfc_mobility_lastyear_19_grouped <- sfc_mobility_lastyear_19 %>%
     education == "NA",
     0, 
     education),
-          
     mobility = ifelse(
     mobility %in% c("Same house:", "Moved within same county:"),
     "Here since last year",
@@ -458,8 +522,7 @@ sfc_mobility_current_18 <-
   group_by(mobility, educ_attain) %>% 
   summarize(estimate = sum(estimate))
 
-
-
+# find the inflow and outflow from SF county 
 sfc_flows_19 <-
   rbind(
     sfc_mobility_current_18,
@@ -473,13 +536,14 @@ sfc_flows_19 <-
       mutate(mobility = "Here this year")
   ) 
 
+#format the data into a wide format 
 sfc_flows_19_wide <- sfc_flows_19 %>% 
   pivot_wider(
     names_from = mobility,
     values_from = estimate
   ) 
 
-
+# add new column that shows the values we are interested in 
 sfc_flows_19_wide_newcols <- sfc_flows_19_wide %>% 
   mutate(
     `External net` = Inflow - Outflow,
@@ -488,7 +552,7 @@ sfc_flows_19_wide_newcols <- sfc_flows_19_wide %>%
 
 #saveRDS(sfc_flows_19_wide_newcols, file = "sfc_flows_19_wide_newcols.rds")
 
-
+# format the table foreasier viewing 
 kable(sfc_flows_19_wide_newcols %>% 
   select(
     `Education Level` = educ_attain, 
@@ -501,3 +565,5 @@ kable(sfc_flows_19_wide_newcols %>%
   ))
 
 ```
+
+From the above inflows and outflows we can see some interesting patterns in SF county. We see increases in both the number of people with less than a high school degree and with people who have a graduate or professional degree, while we see decreases in people at the high school, some college, and bachelor's level. This seems to indicate that the education attainment gap is widening in San Francisco County, as there are increases in the extremes and decreases in the middle education levels. I am curious to see if this is a trend we have seen historically, and will look at historical data in a future investigation. 
