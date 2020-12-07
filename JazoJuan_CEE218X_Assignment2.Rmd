@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = F, message = F, echo = TRUE)
 ```
 
 ## Assignment 2 
@@ -297,7 +297,7 @@ bay_counties <-
   filter(NAME %in% bay_county_names)
 
 #load in CA PUMAS 
-ca_pumas <- pumas("CA", cb =T)
+ca_pumas <- pumas("CA", cb =T, progress_bar =F)
 
 #now we can filter for Bay Area PUMAS
 bay_pumas <-
